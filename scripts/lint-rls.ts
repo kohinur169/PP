@@ -50,7 +50,9 @@ export function lintMigrationsForRls(migrationsDirs: string[]): RlsLintResult {
   for (const dir of migrationsDirs) {
     if (!fs.existsSync(dir)) continue;
 
-    const files = fs.readdirSync(dir).filter((f) => f.endsWith('.sql'));
+    const files = fs
+      .readdirSync(dir)
+      .filter((f) => f.endsWith('.sql') && !f.endsWith('.down.sql'));
     for (const file of files) {
       const fullPath = path.join(dir, file);
       allSqlFiles.push({

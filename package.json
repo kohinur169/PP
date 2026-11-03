@@ -14,6 +14,9 @@
     "lint:paths": "tsx scripts/lint-path-comments.ts",
     "lint:rls": "tsx scripts/lint-rls.ts",
     "migrate:status": "tsx scripts/migrate.ts --status",
+    "migrate:up": "tsx scripts/migrate.ts --up",
+    "migrate:down": "tsx scripts/migrate.ts --down",
+    "migrate:test-cycle": "tsx scripts/migrate.ts --test-cycle",
     "migrate:dry-run": "tsx scripts/migrate.ts --dry-run",
     "verify:audit": "tsx scripts/verify-audit-chain.ts",
     "verify:phase1": "tsx scripts/verify-phase1.ts"

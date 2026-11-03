@@ -5,6 +5,7 @@ import crypto from 'node:crypto';
 import type { MigrationFile, MigrationStatus, MigrationRecord } from './types';
 
 export * from './types';
+export * from './runner';
 export * from './tenant-types';
 export * from './tenant-context';
 export * from './client';
@@ -28,19 +29,25 @@ export function calculateSqlChecksum(sql: string): string {
 }
 
 /**
- * Parses standard timestamp-prefixed migration filename (e.g. 20261103000001_init_extensions.sql).
+ * Parses standard migration filename (e.g. 20261103000001_init_extensions.sql or 002_uuidv7_function.down.sql).
  */
-export function parseMigrationFilename(filename: string): { version: string; name: string } | null {
-  const match = filename.match(/^(\d{14})_(.+)\.sql$/);
+export function parseMigrationFilename(filename: string): {
+  version: string;
+  name: string;
+  direction: 'up' | 'down';
+} | null {
+  const match = filename.match(/^(\d{14}|\d{3})_([a-zA-Z0-9_]+?)(?:\.(up|down))?\.sql$/);
   if (!match || !match[1] || !match[2]) return null;
   return {
     version: match[1],
     name: match[2],
+    direction: (match[3] as 'up' | 'down') ?? 'up',
   };
 }
 
 /**
  * Scans and loads SQL migration files from the specified migrations directory in ascending order.
+ * Pairs every forward migration with its matching rollback migration (.down.sql) if available.
  */
 export function loadMigrationFiles(migrationsDir: string): MigrationFile[] {
   if (!fs.existsSync(migrationsDir)) {
@@ -49,7 +56,8 @@ export function loadMigrationFiles(migrationsDir: string): MigrationFile[] {
 
   const files = fs.readdirSync(migrationsDir).filter((file) => file.endsWith('.sql'));
 
-  const parsedMigrations: MigrationFile[] = [];
+  const upMigrationsMap = new Map<string, MigrationFile>();
+  const downMigrationsMap = new Map<string, { filepath: string; sql: string }>();
 
   for (const file of files) {
     const parsed = parseMigrationFilename(file);
@@ -59,16 +67,68 @@ export function loadMigrationFiles(migrationsDir: string): MigrationFile[] {
     const sql = fs.readFileSync(fullPath, 'utf8');
     const checksum = calculateSqlChecksum(sql);
 
+    if (parsed.direction === 'down') {
+      downMigrationsMap.set(parsed.version, { filepath: fullPath, sql });
+    } else {
+      upMigrationsMap.set(parsed.version, {
+        version: parsed.version,
+        name: parsed.name,
+        filepath: fullPath,
+        sql,
+        checksum,
+        direction: 'up',
+      });
+    }
+  }
+
+  // Pair up migrations with down migrations
+  const parsedMigrations: MigrationFile[] = [];
+
+  for (const [version, upMigration] of upMigrationsMap.entries()) {
+    const down = downMigrationsMap.get(version);
     parsedMigrations.push({
+      ...upMigration,
+      downFilepath: down?.filepath,
+      downSql: down?.sql,
+    });
+  }
+
+  return parsedMigrations.sort((a, b) => a.version.localeCompare(b.version));
+}
+
+/**
+ * Scans and loads rollback migration files (.down.sql) in descending order for rollback execution.
+ */
+export function loadRollbackFiles(migrationsDir: string): MigrationFile[] {
+  if (!fs.existsSync(migrationsDir)) {
+    return [];
+  }
+
+  const files = fs
+    .readdirSync(migrationsDir)
+    .filter((file) => file.endsWith('.down.sql'));
+
+  const rollbackMigrations: MigrationFile[] = [];
+
+  for (const file of files) {
+    const parsed = parseMigrationFilename(file);
+    if (!parsed || parsed.direction !== 'down') continue;
+
+    const fullPath = path.join(migrationsDir, file);
+    const sql = fs.readFileSync(fullPath, 'utf8');
+    const checksum = calculateSqlChecksum(sql);
+
+    rollbackMigrations.push({
       version: parsed.version,
       name: parsed.name,
       filepath: fullPath,
       sql,
       checksum,
+      direction: 'down',
     });
   }
 
-  return parsedMigrations.sort((a, b) => a.version.localeCompare(b.version));
+  return rollbackMigrations.sort((a, b) => b.version.localeCompare(a.version));
 }
 
 /**
