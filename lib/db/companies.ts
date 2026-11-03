@@ -61,9 +61,12 @@ export class CompanyRepository extends AbstractRepository<CompanyEntity> {
       );
     }
 
+    const companyId = input.company_id ?? input.id ?? undefined;
+
     return await this.create({
       ...input,
       ...validated,
+      ...(companyId ? { company_id: companyId, id: companyId } : {}),
       default_currency: 'USD',
     });
   }
