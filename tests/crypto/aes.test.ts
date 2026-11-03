@@ -72,7 +72,20 @@ describe('Step 032: AES-256-GCM Envelope Encryption & Decryption Engine', () => 
     it('rejects malformed or truncated serialized envelopes', () => {
       expect(() => parseEnvelope('invalid-string')).toThrow(DecryptionError);
       expect(() => parseEnvelope('v1:iv:tag')).toThrow(DecryptionError);
-      expect(() => parseEnvelope('v2:iv:tag:cipher')).toThrow(DecryptionError);
+      expect(() => parseEnvelope('v0:iv:tag:cipher')).toThrow(DecryptionError);
+      expect(() => parseEnvelope('vx:iv:tag:cipher')).toThrow(DecryptionError);
+    });
+
+    it('supports higher key versions such as v2 envelopes', () => {
+      const envelopeV2 = encryptAesGcm('secret_payload', testKey, { version: 2 });
+      expect(envelopeV2.version).toBe(2);
+      expect(envelopeV2.serialized.startsWith('v2:')).toBe(true);
+
+      const parsed = parseEnvelope(envelopeV2.serialized);
+      expect(parsed.version).toBe(2);
+
+      const decrypted = decryptAesGcm(envelopeV2, testKey);
+      expect(decrypted).toBe('secret_payload');
     });
   });
 

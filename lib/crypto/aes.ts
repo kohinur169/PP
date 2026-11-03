@@ -14,6 +14,7 @@ export interface EncryptedEnvelope {
 export interface AesEncryptionOptions {
   readonly aad?: string | Buffer | undefined;
   readonly encoding?: 'hex' | 'base64' | undefined;
+  readonly version?: number | undefined;
 }
 
 export interface AesDecryptionOptions {
@@ -63,8 +64,8 @@ export function parseEnvelope(serialized: string): EncryptedEnvelope {
   }
 
   const version = parseInt(versionMatch[1], 10);
-  if (version !== 1) {
-    throw new DecryptionError(`Unsupported envelope version ${version}. Only v1 is supported.`);
+  if (isNaN(version) || version < 1) {
+    throw new DecryptionError(`Unsupported envelope version: ${versionPart}`);
   }
 
   return {
@@ -119,11 +120,12 @@ export function encryptAesGcm(
   const ivHex = iv.toString('hex');
   const authTagHex = authTag.toString('hex');
   const ciphertextHex = ciphertext.toString('hex');
+  const version = options?.version ?? 1;
 
-  const serialized = `v1:${ivHex}:${authTagHex}:${ciphertextHex}`;
+  const serialized = `v${version}:${ivHex}:${authTagHex}:${ciphertextHex}`;
 
   return {
-    version: 1,
+    version,
     iv: ivHex,
     authTag: authTagHex,
     ciphertext: ciphertextHex,
