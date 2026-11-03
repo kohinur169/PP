@@ -39,6 +39,7 @@ export type Permission =
   | 'team:manage'
   // Audit Logs
   | 'audit_logs:read'
+  | 'audit_logs:export'
   // Invoices & Billing
   | 'invoices:read'
   | 'invoices:write'
@@ -129,6 +130,7 @@ export const ROLE_PERMISSIONS: Record<MembershipRole, Permission[]> = {
     'risk:configure',
     'tenant:read',
     'audit_logs:read',
+    'audit_logs:export',
     'invoices:read',
   ],
 

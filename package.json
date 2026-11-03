@@ -15,6 +15,7 @@
     "lint:rls": "tsx scripts/lint-rls.ts",
     "migrate:status": "tsx scripts/migrate.ts --status",
     "migrate:dry-run": "tsx scripts/migrate.ts --dry-run",
+    "verify:audit": "tsx scripts/verify-audit-chain.ts",
     "verify:phase1": "tsx scripts/verify-phase1.ts"
   },
   "dependencies": {
