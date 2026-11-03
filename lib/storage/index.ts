@@ -10,6 +10,7 @@ export * from './types';
 export * from './mock';
 export * from './supabase';
 export * from './s3';
+export * from './validator';
 
 export type StorageProviderType = 'supabase' | 's3' | 'mock';
 
