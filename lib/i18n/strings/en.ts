@@ -132,6 +132,14 @@ export const en = {
     auditLogsTitle: 'Immutable Cryptographic Audit Trail',
     merkleRootExport: 'Export Daily Merkle Root',
   },
+  security: {
+    maskedSecretNotice: 'For your security, full secret keys are never displayed after creation.',
+    lastUpdated: 'Last Updated',
+    neverUpdated: 'Never',
+    copySecret: 'Copy Key ID',
+    copied: 'Copied!',
+    redactedValue: 'Redacted',
+  },
   errors: {
     generic: 'An unexpected operational error occurred. Please try again or contact support.',
     unauthorized: 'Authentication required. Please sign in.',
