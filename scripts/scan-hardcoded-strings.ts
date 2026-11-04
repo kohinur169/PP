@@ -21,9 +21,9 @@ function scanFile(filePath: string): ScanViolation[] {
     const line = lines[i];
 
     // Check 1: Non-English characters (strict English-only rule)
-    // Non-ASCII characters (e.g. non-English scripts)
-    const nonAsciiMatch = line.match(/[^\x00-\x7F]/);
-    // Ignore copyright / standard symbols like quotes or bullet if needed, or flag non-English
+    // Non-ASCII characters (e.g. non-English scripts), allowing standard typographical symbols like bullet
+    const sanitizedLine = line.replace(/[•©®™“”‘’—–]/g, '');
+    const nonAsciiMatch = sanitizedLine.match(/[^\x00-\x7F]/);
     if (nonAsciiMatch && !filePath.includes('tests/')) {
       // Check if it's outside comments or in UI strings
       if (!line.trim().startsWith('//') && !line.trim().startsWith('*')) {

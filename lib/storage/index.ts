@@ -11,6 +11,7 @@ export * from './mock';
 export * from './supabase';
 export * from './s3';
 export * from './validator';
+export * from './file-encryption';
 
 export type StorageProviderType = 'supabase' | 's3' | 'mock';
 

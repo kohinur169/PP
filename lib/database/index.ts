@@ -18,8 +18,10 @@ export * from './users';
 export * from './memberships';
 export * from './audit';
 export * from './merkle';
+export * from './files';
 export * from '../../types/entity';
 export * from '../../types/audit';
+export * from '../../types/file';
 
 /**
  * Computes a SHA-256 hex checksum of SQL migration content.
