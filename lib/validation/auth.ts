@@ -75,6 +75,18 @@ export const RegisterRequestSchema = z.object({
 export type RegisterRequest = z.infer<typeof RegisterRequestSchema>;
 
 /**
+ * Step 049.1: Login Request Zod Schema.
+ * Validates email, password, and Cloudflare Turnstile bot verification token.
+ */
+export const LoginRequestSchema = z.object({
+  email: RegisterEmailSchema,
+  password: z.string().min(1, 'Password is required').max(128, 'Password exceeds maximum length'),
+  turnstile_token: TurnstileTokenSchema.optional(),
+});
+
+export type LoginRequest = z.infer<typeof LoginRequestSchema>;
+
+/**
  * Standard successful response envelope for registration.
  */
 export interface RegisterResponse {
@@ -85,4 +97,23 @@ export interface RegisterResponse {
   readonly company_id?: string | null | undefined;
   readonly message: string;
   readonly created_at: string;
+}
+
+/**
+ * Standard successful response envelope for authentication.
+ */
+export interface LoginResponse {
+  readonly success: boolean;
+  readonly session_token: string;
+  readonly session_id: string;
+  readonly user: {
+    readonly id: string;
+    readonly email: string;
+    readonly full_legal_name: string;
+    readonly company_id: string | null;
+    readonly is_staff: boolean;
+    readonly status: string;
+  };
+  readonly expires_at: string;
+  readonly mfa_required?: boolean | undefined;
 }
