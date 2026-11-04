@@ -16,7 +16,8 @@ export type SensitiveActionType =
   | 'APPROVE_PAYOUT'
   | 'APPROVE_KYC_FINAL'
   | 'MANAGE_PLATFORM_SETTINGS'
-  | 'DELEGATE_STAFF_ROLE';
+  | 'DELEGATE_STAFF_ROLE'
+  | 'OFFBOARD_STAFF_MEMBER';
 
 export const SENSITIVE_ACTION_DESCRIPTIONS: Record<SensitiveActionType, string> = {
   MODIFY_BANK_ACCOUNT: 'Modifying settlement bank account details',
@@ -35,6 +36,7 @@ export const SENSITIVE_ACTION_DESCRIPTIONS: Record<SensitiveActionType, string> 
   APPROVE_KYC_FINAL: 'Granting final compliance approval on KYC application',
   MANAGE_PLATFORM_SETTINGS: 'Modifying sensitive global platform settings or fee configurations',
   DELEGATE_STAFF_ROLE: 'Delegating or elevating internal office staff roles',
+  OFFBOARD_STAFF_MEMBER: 'Same-day immediate offboarding and credential revocation of staff member',
 };
 
 export interface StepUpAuthCheckResult {

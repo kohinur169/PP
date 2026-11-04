@@ -10,7 +10,8 @@ export type UserAccountStatus =
   | 'pending_verification'
   | 'active'
   | 'locked'
-  | 'suspended';
+  | 'suspended'
+  | 'offboarded';
 
 /**
  * Full User Identity entity supporting merchant owners and platform office staff.
@@ -58,7 +59,7 @@ export const UserCreateSchema = z.object({
   failed_attempts: z.number().int().min(0).default(0),
   locked_until: z.string().datetime().optional().nullable().default(null),
   is_staff: z.boolean().default(false),
-  status: z.enum(['pending_verification', 'active', 'locked', 'suspended']).default('pending_verification'),
+  status: z.enum(['pending_verification', 'active', 'locked', 'suspended', 'offboarded']).default('pending_verification'),
   must_setup_2fa: z.boolean().default(false),
 });
 

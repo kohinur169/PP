@@ -156,6 +156,21 @@ export async function authenticateUser(
     };
   }
 
+  // 3.5 Check for suspended or offboarded accounts
+  if (user.status === 'suspended' || user.status === 'offboarded') {
+    await verifyPassword(candidatePassword, DUMMY_ARGON2ID_HASH);
+    const duration = Date.now() - startTime;
+    return {
+      success: false,
+      error: 'ACCOUNT_SUSPENDED',
+      message:
+        user.status === 'offboarded'
+          ? 'Account has been offboarded and permanently disabled.'
+          : 'Account has been suspended. Please contact customer support.',
+      timingDurationMs: duration,
+    };
+  }
+
   // 4. Verify candidate password against real Argon2id password hash
   const passwordMatch = await verifyPassword(candidatePassword, user.password_hash);
 
@@ -189,18 +204,7 @@ export async function authenticateUser(
     };
   }
 
-  // 7. Case E: Check for suspended accounts
-  if (user.status === 'suspended') {
-    const duration = Date.now() - startTime;
-    return {
-      success: false,
-      error: 'ACCOUNT_SUSPENDED',
-      message: 'Account has been suspended. Please contact customer support.',
-      timingDurationMs: duration,
-    };
-  }
-
-  // 8. Successful authentication: reset failed attempts
+  // 7. Successful authentication: reset failed attempts
   if (user.failed_attempts > 0 || user.locked_until !== null) {
     await userRepo.update(user.id, user.version, {
       failed_attempts: 0,
