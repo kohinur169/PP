@@ -11,6 +11,7 @@ export interface UserSession {
   id: string;
   userId: string;
   tenantId?: string | undefined;
+  sessionFamilyId?: string | undefined;
   sessionTokenHash: string;
   deviceFingerprint: string;
   deviceId?: string | undefined;
@@ -21,6 +22,10 @@ export interface UserSession {
   expiresAt: string;
   revokedAt?: string | undefined;
   revocationReason?: string | undefined;
+  isRevoked?: boolean | undefined;
+  isConsumed?: boolean | undefined;
+  consumedAt?: string | undefined;
+  parentSessionId?: string | undefined;
   rawToken?: string | undefined;
   cookieValue?: string | undefined;
   encryptedCookie?: string | undefined;
@@ -46,6 +51,8 @@ export interface CreateSessionParams {
   token?: string | undefined;
   device: DeviceCharacteristics;
   deviceId?: string | undefined;
+  sessionFamilyId?: string | undefined;
+  parentSessionId?: string | undefined;
 }
 
 export interface SessionCookieOptions {

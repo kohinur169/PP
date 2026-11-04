@@ -308,13 +308,21 @@ export function enforceConcurrentSessionLimit(userId: string): number {
 export function createSession(
   userIdOrParams: string | CreateSessionParams,
   deviceContext?: DeviceCharacteristics,
-  options?: { tenantId?: string; deviceId?: string; token?: string }
+  options?: {
+    tenantId?: string;
+    deviceId?: string;
+    token?: string;
+    sessionFamilyId?: string;
+    parentSessionId?: string;
+  }
 ): UserSession {
   let userId: string;
   let device: DeviceCharacteristics;
   let tenantId: string | undefined;
   let deviceId: string | undefined;
   let rawToken: string | undefined;
+  let sessionFamilyId: string | undefined;
+  let parentSessionId: string | undefined;
 
   if (typeof userIdOrParams === 'string') {
     userId = userIdOrParams;
@@ -325,12 +333,16 @@ export function createSession(
     tenantId = options?.tenantId;
     deviceId = options?.deviceId;
     rawToken = options?.token;
+    sessionFamilyId = options?.sessionFamilyId;
+    parentSessionId = options?.parentSessionId;
   } else {
     userId = userIdOrParams.userId;
     device = userIdOrParams.device;
     tenantId = userIdOrParams.tenantId;
     deviceId = userIdOrParams.deviceId;
     rawToken = userIdOrParams.token;
+    sessionFamilyId = userIdOrParams.sessionFamilyId;
+    parentSessionId = userIdOrParams.parentSessionId;
   }
 
   // Enforce concurrent session limit before allocating new session
@@ -346,6 +358,7 @@ export function createSession(
   const tokenHash = hashSessionToken(rawToken);
   const fingerprint = generateDeviceFingerprint(device);
   const sessionId = crypto.randomUUID();
+  const familyId = sessionFamilyId || crypto.randomUUID();
 
   // Encrypt session token for secure client cookie storage
   const encryptedCookie = encryptSessionToken(rawToken);
@@ -354,6 +367,7 @@ export function createSession(
 
   const newSession: UserSession = {
     id: sessionId,
+    sessionFamilyId: familyId,
     userId,
     tenantId,
     deviceId,
@@ -364,6 +378,9 @@ export function createSession(
     lastActiveAt: now.toISOString(),
     createdAt: now.toISOString(),
     expiresAt: expiresAt.toISOString(),
+    isRevoked: false,
+    isConsumed: false,
+    parentSessionId: parentSessionId ?? undefined,
     rawToken,
     cookieValue,
     encryptedCookie,
@@ -374,6 +391,7 @@ export function createSession(
 
   logger.info('LR-022 session created successfully', {
     sessionId: newSession.id,
+    sessionFamilyId: newSession.sessionFamilyId,
     userId: newSession.userId,
     tenantId: newSession.tenantId,
   });
@@ -503,6 +521,26 @@ export function revokeAllUserSessions(
 }
 
 /**
+ * Revokes all sessions belonging to a specific session_family_id lineage.
+ * Invoked immediately upon detecting a replayed or stolen session token.
+ */
+export function revokeSessionFamily(
+  familyId: string,
+  reason: string = 'SESSION_REPLAY_DETECTED'
+): number {
+  let count = 0;
+  for (const session of activeSessionsById.values()) {
+    if (session.sessionFamilyId === familyId && !session.revokedAt) {
+      session.revokedAt = new Date().toISOString();
+      session.revocationReason = reason;
+      session.isRevoked = true;
+      count++;
+    }
+  }
+  return count;
+}
+
+/**
  * Returns all active (non-revoked) sessions for a given user.
  */
 export function getActiveSessionsForUser(userId: string): UserSession[] {
@@ -521,4 +559,18 @@ export function getActiveSessionsForUser(userId: string): UserSession[] {
 export function clearSessionRegistry(): void {
   activeSessionsByTokenHash.clear();
   activeSessionsById.clear();
+}
+
+/**
+ * Retrieves an active in-memory session by its ID.
+ */
+export function getActiveSessionById(sessionId: string): UserSession | undefined {
+  return activeSessionsById.get(sessionId);
+}
+
+/**
+ * Retrieves an active in-memory session by its token hash.
+ */
+export function getActiveSessionByTokenHash(tokenHash: string): UserSession | undefined {
+  return activeSessionsByTokenHash.get(tokenHash);
 }
