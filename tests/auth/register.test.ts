@@ -121,7 +121,7 @@ describe('Step 046: Merchant & Staff Registration Endpoint with Turnstile Guard'
       expect(user).toBeDefined();
       expect(user?.status).toBe('pending_verification');
       expect(user?.is_staff).toBe(false);
-      expect(verifyPassword('Alice#Password2026!KD', user!.password_hash)).toBe(true);
+      expect(await verifyPassword('Alice#Password2026!KD', user!.password_hash)).toBe(true);
 
       // Verify audit log entry
       const auditEntries = await auditRepo.findMany();

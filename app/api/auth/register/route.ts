@@ -9,6 +9,7 @@ import {
   getRateLimitHeaders,
 } from '@/lib/security/rate-limit';
 import { hashPassword } from '@/lib/auth/password';
+import { evaluatePasswordSecurity } from '@/lib/auth/pwned';
 import { UserRepository } from '@/lib/db/users';
 import { CompanyRepository } from '@/lib/db/companies';
 import { CompanyMemberRepository } from '@/lib/db/memberships';
@@ -27,6 +28,7 @@ export interface RegisterRouteDependencies {
   readonly memberRepo?: CompanyMemberRepository | undefined;
   readonly auditRepo?: AuditLogRepository | undefined;
   readonly turnstileValidator?: ((token: string) => Promise<boolean> | boolean) | undefined;
+  readonly pwnedFetcher?: ((prefix: string) => Promise<string> | string) | undefined;
   readonly bypassRateLimit?: boolean | undefined;
 }
 
@@ -194,8 +196,31 @@ export async function POST(
   }
 
   try {
-    // 7. Hash password securely
-    const passwordHash = hashPassword(input.password);
+    // 6. Step 047: Check breached password & zxcvbn complexity
+    const passwordSecurity = await evaluatePasswordSecurity(input.password, {
+      customFetcher: contextOptions?.pwnedFetcher,
+    });
+
+    if (!passwordSecurity.valid) {
+      logger.warn('Registration password security check failed', {
+        email: input.email,
+        breached: passwordSecurity.breached,
+        complexityScore: passwordSecurity.complexity.score,
+      });
+
+      return createProblemResponse(
+        400,
+        'Insecure Password',
+        passwordSecurity.errorMessage || 'Password does not meet platform security requirements.',
+        instancePath,
+        passwordSecurity.breached ? 'PASSWORD_BREACHED' : 'PASSWORD_TOO_WEAK',
+        undefined,
+        rateLimitHeaders
+      );
+    }
+
+    // 7. Hash password securely with Argon2id (Step 047.1)
+    const passwordHash = await hashPassword(input.password);
 
     // 8. Provision company if company_name was supplied
     let companyId: string | null = null;

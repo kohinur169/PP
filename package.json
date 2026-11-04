@@ -33,6 +33,8 @@
     "@radix-ui/react-select": "^2.4.1",
     "@radix-ui/react-slot": "^1.5.0",
     "@supabase/supabase-js": "^2.118.0",
+    "@types/zxcvbn": "^4.4.5",
+    "argon2": "^0.45.2",
     "clsx": "^2.1.1",
     "decimal.js": "^10.6.0",
     "isomorphic-dompurify": "^4.6.0",
@@ -42,7 +44,8 @@
     "react-dom": "^18.3.1",
     "react-hook-form": "^7.91.0",
     "tailwind-merge": "^3.7.0",
-    "zod": "^4.6.7"
+    "zod": "^4.6.7",
+    "zxcvbn": "^4.4.2"
   },
   "devDependencies": {
     "@tailwindcss/forms": "^0.5.11",
