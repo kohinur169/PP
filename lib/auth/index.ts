@@ -36,3 +36,30 @@ export {
   requestPasswordReset as requestPasswordResetToken,
   RESET_TOKEN_EXPIRY_MS,
 } from './password-reset';
+export {
+  Role,
+  PLATFORM_ROLES,
+  Permission as SystemPermission,
+  ALL_PERMISSIONS,
+  RoleSchema,
+  PermissionSchema,
+  ROLE_PERMISSIONS as SYSTEM_ROLE_PERMISSIONS,
+  ROLE_DASHBOARD_ROUTES,
+  MERCHANT_ACCESS_PERMISSIONS,
+  OFFICE_ROLES,
+  hasPermission as hasSystemRolePermission,
+  hasAllPermissions as hasAllSystemRolePermissions,
+  hasAnyPermission as hasAnySystemRolePermission,
+  assertPermission as assertSystemRolePermission,
+  getRolePermissions,
+  isOfficeRole,
+  isMerchantRole,
+  isClientRole,
+  hasMerchantAccess,
+  getDashboardRouteForRole,
+  isValidRole,
+  isValidPermission,
+} from './roles';
+export type { PlatformRole } from './roles';
+
+
