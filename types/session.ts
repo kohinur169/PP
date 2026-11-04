@@ -64,12 +64,23 @@ export interface SessionEntity extends BaseEntity {
 
 export type CreateSessionRecordInput = Omit<
   import('./entity').CreateEntityInput<SessionEntity>,
-  'session_family_id' | 'is_revoked' | 'is_consumed' | 'consumed_at' | 'parent_session_id' | 'last_reauth_at'
+  | 'session_family_id'
+  | 'is_revoked'
+  | 'is_consumed'
+  | 'consumed_at'
+  | 'parent_session_id'
+  | 'last_reauth_at'
+  | 'device_id'
+  | 'revoked_at'
+  | 'revocation_reason'
 > & {
+  readonly device_id?: string | null | undefined;
   readonly session_family_id?: string | undefined;
   readonly is_revoked?: boolean | undefined;
   readonly is_consumed?: boolean | undefined;
   readonly consumed_at?: string | null | undefined;
   readonly parent_session_id?: string | null | undefined;
   readonly last_reauth_at?: string | null | undefined;
+  readonly revoked_at?: string | null | undefined;
+  readonly revocation_reason?: string | null | undefined;
 };

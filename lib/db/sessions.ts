@@ -14,11 +14,7 @@ export class SessionRepository extends AbstractRepository<SessionEntity> {
     readonly defaultCompanyId?: string | undefined;
     readonly driver?: EntityStorageDriver<SessionEntity> | undefined;
   }) {
-    super('Session', {
-      defaultCompanyId:
-        options?.defaultCompanyId ?? '00000000-0000-7000-8000-000000000000',
-      driver: options?.driver,
-    });
+    super('Session', options);
   }
 
   /**
@@ -27,6 +23,13 @@ export class SessionRepository extends AbstractRepository<SessionEntity> {
   public override async create(input: CreateSessionRecordInput): Promise<SessionEntity> {
     return await super.create({
       ...input,
+      device_id: input.device_id ?? null,
+      revoked_at: input.revoked_at ?? null,
+      revocation_reason: input.revocation_reason ?? null,
+      company_id:
+        input.company_id ??
+        this.defaultCompanyId ??
+        '00000000-0000-7000-8000-000000000000',
       session_family_id: input.session_family_id ?? generateUuidV7(),
       is_revoked: input.is_revoked ?? false,
       is_consumed: input.is_consumed ?? false,
@@ -55,26 +58,29 @@ export class SessionRepository extends AbstractRepository<SessionEntity> {
    * Finds an active or historical session by its cryptographic SHA-256 token hash.
    */
   public async findByTokenHash(tokenHash: string): Promise<SessionEntity | null> {
-    const all = await this.findMany({ includeDeleted: false });
-    const match = all.find((s) => s.token_hash === tokenHash);
-    return match ?? null;
+    const all = await this.driver.findMany(
+      (s) => s.token_hash === tokenHash && s.deleted_at === null
+    );
+    return all[0] ?? null;
   }
 
   /**
    * Finds a session by either primary key id or session_id alias.
    */
   public async findBySessionId(sessionId: string): Promise<SessionEntity | null> {
-    const all = await this.findMany({ includeDeleted: false });
-    const match = all.find((s) => s.id === sessionId || s.session_id === sessionId);
-    return match ?? null;
+    const all = await this.driver.findMany(
+      (s) => (s.id === sessionId || s.session_id === sessionId) && s.deleted_at === null
+    );
+    return all[0] ?? null;
   }
 
   /**
    * Retrieves all session records sharing a given session_family_id lineage.
    */
   public async findByFamilyId(familyId: string): Promise<SessionEntity[]> {
-    const all = await this.findMany({ includeDeleted: false });
-    return all.filter((s) => s.session_family_id === familyId);
+    return await this.driver.findMany(
+      (s) => s.session_family_id === familyId && s.deleted_at === null
+    );
   }
 
   /**
@@ -84,9 +90,8 @@ export class SessionRepository extends AbstractRepository<SessionEntity> {
     userId: string,
     currentTime: number = Date.now()
   ): Promise<SessionEntity[]> {
-    const all = await this.findMany({ includeDeleted: false });
-    return all.filter((s) => {
-      if (s.user_id !== userId) return false;
+    return await this.driver.findMany((s) => {
+      if (s.user_id !== userId || s.deleted_at !== null) return false;
       if (s.revoked_at !== null || s.is_revoked) return false;
       const exp = new Date(s.expires_at).getTime();
       return exp > currentTime;

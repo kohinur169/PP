@@ -28,3 +28,4 @@ export * from './rbac-types';
 export * from './rbac';
 export * from './device';
 export * from './rotation';
+export * from './session-kill';
