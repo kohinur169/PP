@@ -61,5 +61,7 @@ export {
   isValidPermission,
 } from './roles';
 export type { PlatformRole } from './roles';
+export * from './guard';
+
 
 

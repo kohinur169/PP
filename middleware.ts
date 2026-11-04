@@ -1,12 +1,25 @@
 // path: middleware.ts
 
 import { NextRequest, NextResponse } from 'next/server';
+import {
+  extractRoleFromRequest,
+  evaluateRouteAccess,
+  createRbacResponse,
+  isProtectedRoute,
+} from '@/lib/auth/guard';
+import { Role } from '@/lib/auth/roles';
 
 /**
- * Step 052.4 & Step 055.3: Global Next.js middleware interceptor.
- * Enforces LR-022 session extraction and validation across requests,
- * and gates mandatory 2FA enrollment across all account roles,
- * redirecting unconfigured authenticated users to /auth/2fa/setup.
+ * Step 062: RBAC Route Guards & Next.js Edge Middleware.
+ * Enforces strict role separation across all platform and merchant dashboard routes:
+ *   /super-admin/* -> super_admin
+ *   /ceo/*         -> ceo
+ *   /compliance/*  -> compliance_kyc
+ *   /finance/*     -> finance_ops
+ *   /support/*     -> support
+ *   /blogger/*     -> blogger
+ *   /dashboard/*   -> owner
+ * Gates unauthorized roles immediately with HTTP 403 Forbidden redirect to their designated home dashboard.
  */
 export async function middleware(request: NextRequest): Promise<NextResponse> {
   const { pathname } = request.nextUrl;
@@ -23,15 +36,36 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
     return NextResponse.next();
   }
 
+  // Check if route requires RBAC protection
+  const isProtected = isProtectedRoute(pathname);
+
   // Check for session cookie
   const sessionCookie =
     request.cookies.get('__Host-kd_session')?.value ??
     request.cookies.get('kd_session')?.value;
 
-  if (!sessionCookie && (pathname.startsWith('/dashboard') || pathname.startsWith('/office') || pathname.startsWith('/compliance') || pathname.startsWith('/finance'))) {
+  // Extract platform role from request headers or cookies
+  let role = extractRoleFromRequest(request);
+
+  // If a valid session cookie exists without an explicit role header, default merchant sessions to owner
+  if (!role && sessionCookie) {
+    role = Role.OWNER;
+  }
+
+  // Unauthenticated access to protected routes: redirect to login
+  if (isProtected && !sessionCookie && !role) {
     const loginUrl = new URL('/auth/login', request.url);
     loginUrl.searchParams.set('returnTo', pathname);
     return NextResponse.redirect(loginUrl);
+  }
+
+  // Evaluate RBAC for protected routes
+  if (isProtected) {
+    const decision = evaluateRouteAccess(pathname, role);
+
+    if (!decision.allowed) {
+      return createRbacResponse(decision, request);
+    }
   }
 
   return NextResponse.next();
