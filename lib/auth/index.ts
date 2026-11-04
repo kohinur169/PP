@@ -29,3 +29,10 @@ export * from './rbac';
 export * from './device';
 export * from './rotation';
 export * from './session-kill';
+export {
+  executePasswordReset,
+  hashResetToken,
+  isAccountLocked,
+  requestPasswordReset as requestPasswordResetToken,
+  RESET_TOKEN_EXPIRY_MS,
+} from './password-reset';
