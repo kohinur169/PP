@@ -10,7 +10,11 @@ export type SensitiveActionType =
   | 'TRANSFER_OWNERSHIP'
   | 'ROTATE_WEBHOOK_SECRET'
   | 'UNLOCK_USER_ACCOUNT'
-  | 'RESET_USER_2FA';
+  | 'RESET_USER_2FA'
+  | 'UPDATE_GATEWAY_KEYS'
+  | 'REVEAL_GATEWAY_KEYS'
+  | 'APPROVE_PAYOUT'
+  | 'APPROVE_KYC_FINAL';
 
 export const SENSITIVE_ACTION_DESCRIPTIONS: Record<SensitiveActionType, string> = {
   MODIFY_BANK_ACCOUNT: 'Modifying settlement bank account details',
@@ -23,7 +27,19 @@ export const SENSITIVE_ACTION_DESCRIPTIONS: Record<SensitiveActionType, string> 
   ROTATE_WEBHOOK_SECRET: 'Rotating payment gateway webhook verification secrets',
   UNLOCK_USER_ACCOUNT: 'Administrative unlock of a security-locked user account',
   RESET_USER_2FA: 'Administrative reset of user two-factor authentication credentials',
+  UPDATE_GATEWAY_KEYS: 'Revealing or editing payment gateway credentials',
+  REVEAL_GATEWAY_KEYS: 'Revealing live payment gateway API keys',
+  APPROVE_PAYOUT: 'Approving merchant payout disbursement',
+  APPROVE_KYC_FINAL: 'Granting final compliance approval on KYC application',
 };
+
+export interface StepUpAuthCheckResult {
+  readonly stepUpRequired: boolean;
+  readonly lastReauthAt: string | null;
+  readonly secondsSinceReauth: number | null;
+  readonly maxAgeSeconds: number;
+  readonly message?: string | undefined;
+}
 
 export interface ReauthTicket {
   id: string;

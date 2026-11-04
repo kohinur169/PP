@@ -32,6 +32,22 @@ export class SessionRepository extends AbstractRepository<SessionEntity> {
       is_consumed: input.is_consumed ?? false,
       consumed_at: input.consumed_at ?? null,
       parent_session_id: input.parent_session_id ?? null,
+      last_reauth_at: input.last_reauth_at ?? null,
+    });
+  }
+
+  /**
+   * Step 058.3: Updates last_reauth_at timestamp on a session upon successful step-up reauthentication.
+   */
+  public async updateReauthTimestamp(
+    sessionId: string,
+    timestamp: string = new Date().toISOString()
+  ): Promise<SessionEntity | null> {
+    const session = await this.findBySessionId(sessionId);
+    if (!session || session.revoked_at !== null || session.is_revoked) return null;
+
+    return await this.update(session.id, session.version, {
+      last_reauth_at: timestamp,
     });
   }
 

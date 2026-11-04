@@ -26,6 +26,8 @@ export interface UserSession {
   isConsumed?: boolean | undefined;
   consumedAt?: string | undefined;
   parentSessionId?: string | undefined;
+  last_reauth_at?: string | null | undefined;
+  lastReauthAt?: string | null | undefined;
   rawToken?: string | undefined;
   cookieValue?: string | undefined;
   encryptedCookie?: string | undefined;

@@ -21,6 +21,7 @@ export const SessionCreateSchema = z.object({
   is_consumed: z.boolean().default(false),
   consumed_at: z.string().datetime().nullable().optional(),
   parent_session_id: z.string().uuid().nullable().optional(),
+  last_reauth_at: z.string().datetime().nullable().optional(),
 });
 
 export type CreateSessionInput = z.infer<typeof SessionCreateSchema>;
@@ -35,6 +36,7 @@ export const SessionUpdateSchema = z.object({
   is_consumed: z.boolean().optional(),
   consumed_at: z.string().datetime().nullable().optional(),
   parent_session_id: z.string().uuid().nullable().optional(),
+  last_reauth_at: z.string().datetime().nullable().optional(),
   deleted_at: z.string().datetime().nullable().optional(),
 });
 
@@ -57,15 +59,17 @@ export interface SessionEntity extends BaseEntity {
   is_consumed: boolean;
   consumed_at: string | null;
   parent_session_id: string | null;
+  last_reauth_at: string | null;
 }
 
 export type CreateSessionRecordInput = Omit<
   import('./entity').CreateEntityInput<SessionEntity>,
-  'session_family_id' | 'is_revoked' | 'is_consumed' | 'consumed_at' | 'parent_session_id'
+  'session_family_id' | 'is_revoked' | 'is_consumed' | 'consumed_at' | 'parent_session_id' | 'last_reauth_at'
 > & {
   readonly session_family_id?: string | undefined;
   readonly is_revoked?: boolean | undefined;
   readonly is_consumed?: boolean | undefined;
   readonly consumed_at?: string | null | undefined;
   readonly parent_session_id?: string | null | undefined;
+  readonly last_reauth_at?: string | null | undefined;
 };
