@@ -21,7 +21,8 @@
     "crypto:rotate": "tsx scripts/rotate-keys.ts",
     "db:seed": "tsx db/seeds/index.ts",
     "verify:audit": "tsx scripts/verify-audit-chain.ts",
-    "verify:phase1": "tsx scripts/verify-phase1.ts"
+    "verify:phase1": "tsx scripts/verify-phase1.ts",
+    "storage:check": "tsx scripts/check-storage.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1161.0",
