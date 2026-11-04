@@ -27,6 +27,7 @@ export interface UserEntity extends BaseEntity {
   readonly is_staff: boolean;
   readonly status: UserAccountStatus;
   readonly email_verified_at?: string | null | undefined;
+  readonly must_setup_2fa?: boolean | undefined;
 }
 
 /**
@@ -58,6 +59,7 @@ export const UserCreateSchema = z.object({
   locked_until: z.string().datetime().optional().nullable().default(null),
   is_staff: z.boolean().default(false),
   status: z.enum(['pending_verification', 'active', 'locked', 'suspended']).default('pending_verification'),
+  must_setup_2fa: z.boolean().default(false),
 });
 
 /**

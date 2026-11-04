@@ -9,7 +9,8 @@ export type SensitiveActionType =
   | 'FREEZE_PAYOUTS'
   | 'TRANSFER_OWNERSHIP'
   | 'ROTATE_WEBHOOK_SECRET'
-  | 'UNLOCK_USER_ACCOUNT';
+  | 'UNLOCK_USER_ACCOUNT'
+  | 'RESET_USER_2FA';
 
 export const SENSITIVE_ACTION_DESCRIPTIONS: Record<SensitiveActionType, string> = {
   MODIFY_BANK_ACCOUNT: 'Modifying settlement bank account details',
@@ -21,6 +22,7 @@ export const SENSITIVE_ACTION_DESCRIPTIONS: Record<SensitiveActionType, string> 
   TRANSFER_OWNERSHIP: 'Transferring tenant ownership to another user',
   ROTATE_WEBHOOK_SECRET: 'Rotating payment gateway webhook verification secrets',
   UNLOCK_USER_ACCOUNT: 'Administrative unlock of a security-locked user account',
+  RESET_USER_2FA: 'Administrative reset of user two-factor authentication credentials',
 };
 
 export interface ReauthTicket {

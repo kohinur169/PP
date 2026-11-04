@@ -40,6 +40,7 @@ export class UserRepository extends AbstractRepository<UserEntity> {
       locked_until: input.locked_until ?? null,
       is_staff: input.is_staff ?? false,
       status: input.status ?? 'pending_verification',
+      must_setup_2fa: input.must_setup_2fa ?? false,
     });
 
     // Check lowercase unique email
