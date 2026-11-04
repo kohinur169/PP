@@ -12,6 +12,7 @@ import {
   authenticateUser,
   GENERIC_AUTH_ERROR_MESSAGE,
 } from '@/lib/auth/login';
+import { buildSessionCookieHeader } from '@/lib/auth/session';
 import type { DeviceCharacteristics } from '@/lib/auth/session-types';
 import { UserRepository } from '@/lib/db/users';
 import { AuditLogRepository } from '@/lib/db/audit';
@@ -247,10 +248,8 @@ export async function POST(
   responseHeaders.set('Content-Type', 'application/json');
   responseHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate');
 
-  // Secure HttpOnly session cookie
-  const cookieValue = `kd_session=${encodeURIComponent(
-    sessionToken
-  )}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=28800`;
+  // Step 055: Secure HttpOnly session cookie strictly configured with SameSite=Strict and Path=/
+  const cookieValue = buildSessionCookieHeader(sessionToken);
   responseHeaders.set('Set-Cookie', cookieValue);
 
   return new NextResponse(

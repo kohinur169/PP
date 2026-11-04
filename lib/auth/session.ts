@@ -5,21 +5,206 @@ import type {
   DeviceCharacteristics,
   SessionValidationResult,
   CreateSessionParams,
+  SessionCookieOptions,
+  ParsedCookieAttributes,
 } from './session-types';
 import {
   generateDeviceFingerprint,
   verifyDeviceFingerprint,
   hashSessionToken,
 } from './fingerprint';
+import {
+  encryptWithDomainKey,
+  decryptWithDomainKey,
+} from '../crypto/aes';
 import { logger } from '@/lib/logger';
 
 export const IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes (LR-022 rolling inactivity)
 export const ABSOLUTE_TIMEOUT_MS = 8 * 60 * 60 * 1000; // 8 hours (LR-022 hard ceiling)
 export const MAX_CONCURRENT_SESSIONS = 5; // LR-022 concurrent session limit
 
+export const SESSION_COOKIE_NAME = 'kd_session';
+export const SESSION_COOKIE_MAX_AGE_SECONDS = 28800; // 8 hours (ABSOLUTE_TIMEOUT_MS / 1000)
+
+export const DEFAULT_SESSION_COOKIE_OPTIONS: SessionCookieOptions = {
+  name: SESSION_COOKIE_NAME,
+  httpOnly: true,
+  secure: true,
+  sameSite: 'Strict',
+  path: '/',
+  maxAge: SESSION_COOKIE_MAX_AGE_SECONDS,
+};
+
 // Fast memory store with persistence interface for active LR-022 sessions
 const activeSessionsByTokenHash = new Map<string, UserSession>();
 const activeSessionsById = new Map<string, UserSession>();
+
+/**
+ * Extracts client device characteristics from request headers.
+ */
+export function extractDeviceFromRequest(request: Request): DeviceCharacteristics {
+  let ip = '127.0.0.1';
+  const cfIp = request.headers.get('cf-connecting-ip');
+  if (cfIp) {
+    ip = cfIp.trim();
+  } else {
+    const xff = request.headers.get('x-forwarded-for');
+    if (xff) {
+      ip = xff.split(',')[0]?.trim() || ip;
+    } else {
+      const realIp = request.headers.get('x-real-ip');
+      if (realIp) ip = realIp.trim();
+    }
+  }
+
+  const userAgent = request.headers.get('user-agent') || 'Unknown User-Agent';
+  const acceptLanguage = request.headers.get('accept-language') || undefined;
+  const acceptEncoding = request.headers.get('accept-encoding') || undefined;
+
+  return { ip, userAgent, acceptLanguage, acceptEncoding };
+}
+
+/**
+ * Encrypts a raw session secret token into an authenticated AES-256-GCM envelope
+ * bound to the 'tokens' cryptographic subkey.
+ */
+export function encryptSessionToken(token: string): string {
+  return encryptWithDomainKey('tokens', token);
+}
+
+/**
+ * Decrypts an authenticated AES-256-GCM envelope back to its raw session token.
+ * If the string is already a plain token or cannot be decrypted, handles gracefully.
+ */
+export function decryptSessionToken(encrypted: string): string | null {
+  if (!encrypted) return null;
+  if (!encrypted.startsWith('v1:')) {
+    return encrypted;
+  }
+  try {
+    return decryptWithDomainKey('tokens', encrypted);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Formats a Set-Cookie header string strictly configured with HttpOnly, Secure,
+ * SameSite=Strict, and path=/ for LR-022 compliance.
+ */
+export function buildSessionCookieHeader(
+  tokenValue: string,
+  options?: Partial<SessionCookieOptions>
+): string {
+  const opts = { ...DEFAULT_SESSION_COOKIE_OPTIONS, ...(options ?? {}) };
+  const sameSiteFormatted =
+    opts.sameSite.toLowerCase() === 'strict'
+      ? 'Strict'
+      : opts.sameSite.toLowerCase() === 'lax'
+      ? 'Lax'
+      : 'None';
+
+  const parts = [
+    `${opts.name}=${encodeURIComponent(tokenValue)}`,
+    `Path=${opts.path}`,
+  ];
+
+  if (opts.httpOnly) parts.push('HttpOnly');
+  if (opts.secure) parts.push('Secure');
+  parts.push(`SameSite=${sameSiteFormatted}`);
+  parts.push(`Max-Age=${opts.maxAge}`);
+
+  return parts.join('; ');
+}
+
+/**
+ * Formats an expired Set-Cookie header to explicitly clear the session cookie on logout.
+ */
+export function formatClearSessionCookieHeader(
+  cookieName: string = SESSION_COOKIE_NAME
+): string {
+  return `${cookieName}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+}
+
+/**
+ * Parses a Cookie header string and retrieves the value of a specific cookie.
+ */
+export function parseCookieHeader(
+  cookieHeader: string | null | undefined,
+  cookieName: string = SESSION_COOKIE_NAME
+): string | null {
+  if (!cookieHeader) return null;
+  const pattern = new RegExp(`(?:^|;\\s*)${cookieName}=([^;]+)`);
+  const match = cookieHeader.match(pattern);
+  if (!match || !match[1]) return null;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return match[1];
+  }
+}
+
+/**
+ * Inspects a Set-Cookie header string and extracts all cookie attributes
+ * for security verification and test assertions.
+ */
+export function parseCookieAttributes(cookieHeader: string): ParsedCookieAttributes {
+  const parts = cookieHeader.split(';').map((p) => p.trim());
+  const [firstPart, ...rest] = parts;
+  const eqIdx = firstPart ? firstPart.indexOf('=') : -1;
+  const name = eqIdx >= 0 ? firstPart!.slice(0, eqIdx) : '';
+  const value = eqIdx >= 0 ? decodeURIComponent(firstPart!.slice(eqIdx + 1)) : '';
+
+  let path: string | undefined;
+  let httpOnly = false;
+  let secure = false;
+  let sameSite: string | undefined;
+  let maxAge: number | undefined;
+  let expires: string | undefined;
+
+  for (const part of rest) {
+    const lower = part.toLowerCase();
+    if (lower === 'httponly') httpOnly = true;
+    else if (lower === 'secure') secure = true;
+    else if (lower.startsWith('samesite=')) {
+      sameSite = part.split('=')[1]?.trim();
+    } else if (lower.startsWith('path=')) {
+      path = part.split('=')[1]?.trim();
+    } else if (lower.startsWith('max-age=')) {
+      const parsed = parseInt(part.split('=')[1]?.trim() || '', 10);
+      if (!Number.isNaN(parsed)) maxAge = parsed;
+    } else if (lower.startsWith('expires=')) {
+      expires = part.slice(part.indexOf('=') + 1).trim();
+    }
+  }
+
+  return {
+    name,
+    value,
+    path,
+    httpOnly,
+    secure,
+    sameSite,
+    maxAge,
+    expires,
+  };
+}
+
+/**
+ * Extracts session token from incoming request headers (cookie or bearer token).
+ */
+export function extractSessionTokenFromRequest(request: Request): string | null {
+  const cookieHeader = request.headers.get('cookie');
+  const tokenFromCookie = parseCookieHeader(cookieHeader, SESSION_COOKIE_NAME);
+  if (tokenFromCookie) return tokenFromCookie;
+
+  const authHeader = request.headers.get('authorization');
+  if (authHeader && authHeader.toLowerCase().startsWith('bearer ')) {
+    return authHeader.slice(7).trim();
+  }
+
+  return null;
+}
 
 /**
  * Validates an active session record against LR-022 constraints:
@@ -118,29 +303,70 @@ export function enforceConcurrentSessionLimit(userId: string): number {
 
 /**
  * Creates and registers a new LR-022 user session.
+ * Generates an encrypted session cookie header configured with HttpOnly, Secure, SameSite=Strict.
  */
-export function createSession(params: CreateSessionParams): UserSession {
+export function createSession(
+  userIdOrParams: string | CreateSessionParams,
+  deviceContext?: DeviceCharacteristics,
+  options?: { tenantId?: string; deviceId?: string; token?: string }
+): UserSession {
+  let userId: string;
+  let device: DeviceCharacteristics;
+  let tenantId: string | undefined;
+  let deviceId: string | undefined;
+  let rawToken: string | undefined;
+
+  if (typeof userIdOrParams === 'string') {
+    userId = userIdOrParams;
+    if (!deviceContext) {
+      throw new Error('Device characteristics must be provided when creating a session by user ID.');
+    }
+    device = deviceContext;
+    tenantId = options?.tenantId;
+    deviceId = options?.deviceId;
+    rawToken = options?.token;
+  } else {
+    userId = userIdOrParams.userId;
+    device = userIdOrParams.device;
+    tenantId = userIdOrParams.tenantId;
+    deviceId = userIdOrParams.deviceId;
+    rawToken = userIdOrParams.token;
+  }
+
   // Enforce concurrent session limit before allocating new session
-  enforceConcurrentSessionLimit(params.userId);
+  enforceConcurrentSessionLimit(userId);
 
   const now = new Date();
   const expiresAt = new Date(now.getTime() + ABSOLUTE_TIMEOUT_MS);
 
-  const tokenHash = hashSessionToken(params.token);
-  const fingerprint = generateDeviceFingerprint(params.device);
+  if (!rawToken || rawToken.trim().length === 0) {
+    rawToken = crypto.randomBytes(32).toString('hex');
+  }
+
+  const tokenHash = hashSessionToken(rawToken);
+  const fingerprint = generateDeviceFingerprint(device);
   const sessionId = crypto.randomUUID();
+
+  // Encrypt session token for secure client cookie storage
+  const encryptedCookie = encryptSessionToken(rawToken);
+  // Build LR-022 compliant HttpOnly, Secure, SameSite=Strict cookie header
+  const cookieValue = buildSessionCookieHeader(encryptedCookie);
 
   const newSession: UserSession = {
     id: sessionId,
-    userId: params.userId,
-    tenantId: params.tenantId,
+    userId,
+    tenantId,
+    deviceId,
     sessionTokenHash: tokenHash,
     deviceFingerprint: fingerprint,
-    ipAddress: params.device.ip,
-    userAgent: params.device.userAgent,
+    ipAddress: device.ip,
+    userAgent: device.userAgent,
     lastActiveAt: now.toISOString(),
     createdAt: now.toISOString(),
     expiresAt: expiresAt.toISOString(),
+    rawToken,
+    cookieValue,
+    encryptedCookie,
   };
 
   activeSessionsByTokenHash.set(tokenHash, newSession);
@@ -156,14 +382,22 @@ export function createSession(params: CreateSessionParams): UserSession {
 }
 
 /**
- * Retrieves a session by its raw token and validates it against current device characteristics.
+ * Retrieves a session by its raw or encrypted token and validates it against current device characteristics.
  */
 export function getAndValidateSession(
   token: string,
   device: DeviceCharacteristics,
   currentTime: number = Date.now()
 ): SessionValidationResult {
-  const tokenHash = hashSessionToken(token);
+  let rawToken = token;
+  if (token.startsWith('v1:')) {
+    const decrypted = decryptSessionToken(token);
+    if (decrypted) {
+      rawToken = decrypted;
+    }
+  }
+
+  const tokenHash = hashSessionToken(rawToken);
   const session = activeSessionsByTokenHash.get(tokenHash);
 
   if (!session) {
@@ -185,6 +419,26 @@ export function getAndValidateSession(
   }
 
   return result;
+}
+
+/**
+ * Validates a session extracted directly from an incoming HTTP Request.
+ */
+export function validateSessionFromRequest(
+  request: Request,
+  options?: { currentTime?: number }
+): SessionValidationResult {
+  const token = extractSessionTokenFromRequest(request);
+  if (!token) {
+    return {
+      valid: false,
+      errorCode: 'NOT_FOUND',
+      message: 'No session token or cookie supplied in request headers.',
+    };
+  }
+
+  const device = extractDeviceFromRequest(request);
+  return getAndValidateSession(token, device, options?.currentTime);
 }
 
 /**

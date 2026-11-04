@@ -2,12 +2,19 @@
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { getAndValidateSession } from './session';
+import {
+  getAndValidateSession,
+  extractSessionTokenFromRequest,
+  extractDeviceFromRequest,
+  validateSessionFromRequest,
+} from './session';
 import { isUser2faEnrolled, evaluate2faRedirect } from './totp';
 import { UserMfaRepository } from '../db/mfa';
-import type { DeviceCharacteristics } from './session-types';
+import type { UserSession, DeviceCharacteristics } from './session-types';
 
 const defaultMfaRepo = new UserMfaRepository();
+
+export { extractDeviceFromRequest };
 
 export interface MiddlewareAuthResult {
   readonly shouldRedirect: boolean;
@@ -16,27 +23,34 @@ export interface MiddlewareAuthResult {
   readonly mfaEnabled?: boolean | undefined;
 }
 
+export interface MiddlewareSessionValidationResult {
+  readonly authenticated: boolean;
+  readonly session?: UserSession | undefined;
+  readonly error?: string | undefined;
+}
+
 /**
- * Extracts client device characteristics from NextRequest headers.
+ * Validates session token and client device characteristics on an incoming NextRequest.
  */
-export function extractDeviceFromRequest(request: NextRequest | Request): DeviceCharacteristics {
-  let ip = '127.0.0.1';
-  const cfIp = request.headers.get('cf-connecting-ip');
-  if (cfIp) ip = cfIp;
-  else {
-    const xff = request.headers.get('x-forwarded-for');
-    if (xff) ip = xff.split(',')[0]?.trim() || ip;
+export function validateMiddlewareSession(
+  request: NextRequest | Request
+): MiddlewareSessionValidationResult {
+  const result = validateSessionFromRequest(request);
+  if (!result.valid || !result.session) {
+    return {
+      authenticated: false,
+      error: result.message || 'Session invalid or not found',
+    };
   }
-
-  const userAgent = request.headers.get('user-agent') || 'Unknown User-Agent';
-  const acceptLanguage = request.headers.get('accept-language') || 'en-US';
-
-  return { ip, userAgent, acceptLanguage };
+  return {
+    authenticated: true,
+    session: result.session,
+  };
 }
 
 /**
  * Evaluates whether an incoming request requires redirection to mandatory 2FA enrollment.
- * Step 052.4: Intercepts authenticated requests and forces setup if 2FA is not yet active.
+ * Step 052.4 & Step 055.3: Intercepts authenticated requests and forces setup if 2FA is not yet active.
  */
 export async function evaluateRequest2faRequirement(
   request: NextRequest | Request,
@@ -46,22 +60,8 @@ export async function evaluateRequest2faRequirement(
   const url = new URL(request.url);
   const pathname = url.pathname;
 
-  // Extract session token from cookie or authorization header
-  let token: string | null = null;
-  const cookieHeader = request.headers.get('cookie');
-  if (cookieHeader) {
-    const match = cookieHeader.match(/kd_session=([^;]+)/);
-    if (match && match[1]) {
-      token = decodeURIComponent(match[1]);
-    }
-  }
-
-  if (!token) {
-    const authHeader = request.headers.get('authorization');
-    if (authHeader && authHeader.toLowerCase().startsWith('bearer ')) {
-      token = authHeader.slice(7).trim();
-    }
-  }
+  // Extract session token from cookie or authorization header using canonical LR-022 extractor
+  const token = extractSessionTokenFromRequest(request);
 
   // Also check x-user-id for test environments
   const directUserId = request.headers.get('x-user-id');
@@ -109,7 +109,7 @@ export async function evaluateRequest2faRequirement(
 }
 
 /**
- * Next.js Edge / Node Middleware handler for 2FA enrollment gating.
+ * Next.js Edge / Node Middleware handler for 2FA enrollment gating and session validation.
  */
 export async function handle2faMiddleware(
   request: NextRequest,

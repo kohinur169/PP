@@ -13,6 +13,7 @@ export interface UserSession {
   tenantId?: string | undefined;
   sessionTokenHash: string;
   deviceFingerprint: string;
+  deviceId?: string | undefined;
   ipAddress: string;
   userAgent: string;
   lastActiveAt: string;
@@ -20,6 +21,9 @@ export interface UserSession {
   expiresAt: string;
   revokedAt?: string | undefined;
   revocationReason?: string | undefined;
+  rawToken?: string | undefined;
+  cookieValue?: string | undefined;
+  encryptedCookie?: string | undefined;
 }
 
 export type SessionErrorCode =
@@ -39,6 +43,27 @@ export interface SessionValidationResult {
 export interface CreateSessionParams {
   userId: string;
   tenantId?: string | undefined;
-  token: string;
+  token?: string | undefined;
   device: DeviceCharacteristics;
+  deviceId?: string | undefined;
+}
+
+export interface SessionCookieOptions {
+  name: string;
+  httpOnly: boolean;
+  secure: boolean;
+  sameSite: 'Strict' | 'Lax' | 'None' | 'strict' | 'lax' | 'none';
+  path: string;
+  maxAge: number;
+}
+
+export interface ParsedCookieAttributes {
+  name: string;
+  value: string;
+  path?: string | undefined;
+  httpOnly: boolean;
+  secure: boolean;
+  sameSite?: string | undefined;
+  maxAge?: number | undefined;
+  expires?: string | undefined;
 }
