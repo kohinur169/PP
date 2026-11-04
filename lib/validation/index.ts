@@ -2,3 +2,4 @@
 export * from './primitives';
 export * from './middleware';
 export * from './types';
+export * from './auth';

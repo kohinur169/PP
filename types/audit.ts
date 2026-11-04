@@ -28,6 +28,7 @@ export type AuditEventCategory =
  */
 export type StandardAuditAction =
   // Authentication & Sessions
+  | 'USER_REGISTERED'
   | 'AUTH_LOGIN_SUCCESS'
   | 'AUTH_LOGIN_FAILED'
   | 'AUTH_LOGOUT'
