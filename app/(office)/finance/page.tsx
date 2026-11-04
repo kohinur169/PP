@@ -4,6 +4,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { LiquidityHealthCard } from '@/components/finance/LiquidityHealthCard';
 
 export default function FinanceOverviewPage() {
   const [stats, setStats] = useState({
@@ -22,6 +23,9 @@ export default function FinanceOverviewPage() {
           Executive summary of daily settlement balance runs, 3-day reconciliation exceptions, and banking payout inquiries.
         </p>
       </div>
+
+      {/* Step 080: Platform Emergency Liquidity Buffer & Capitalization Health */}
+      <LiquidityHealthCard showAdminControls={true} />
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-slate-950 border border-slate-800 rounded-lg p-5">
