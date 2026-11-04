@@ -10,10 +10,12 @@ import {
 } from '@/lib/security/rate-limit';
 import { hashPassword } from '@/lib/auth/password';
 import { evaluatePasswordSecurity } from '@/lib/auth/pwned';
+import { generateEmailVerificationToken } from '@/lib/auth/email-verify';
 import { UserRepository } from '@/lib/db/users';
 import { CompanyRepository } from '@/lib/db/companies';
 import { CompanyMemberRepository } from '@/lib/db/memberships';
 import { AuditLogRepository } from '@/lib/db/audit';
+import { EmailVerificationTokenRepository } from '@/lib/db/email-verify';
 import { generateUuidV7 } from '@/lib/db/uuidv7';
 import { logger } from '@/lib/logger';
 
@@ -27,6 +29,7 @@ export interface RegisterRouteDependencies {
   readonly companyRepo?: CompanyRepository | undefined;
   readonly memberRepo?: CompanyMemberRepository | undefined;
   readonly auditRepo?: AuditLogRepository | undefined;
+  readonly tokenRepo?: EmailVerificationTokenRepository | undefined;
   readonly turnstileValidator?: ((token: string) => Promise<boolean> | boolean) | undefined;
   readonly pwnedFetcher?: ((prefix: string) => Promise<string> | string) | undefined;
   readonly bypassRateLimit?: boolean | undefined;
@@ -279,7 +282,13 @@ export async function POST(
       });
     }
 
-    // 11. Append audit log entry
+    // 11. Step 048: Generate cryptographic email verification token
+    const verification = await generateEmailVerificationToken(newUser.id, {
+      tokenRepo: contextOptions?.tokenRepo,
+      userRepo,
+    });
+
+    // 12. Append audit log entry
     const auditRepo = contextOptions?.auditRepo ?? new AuditLogRepository();
     await auditRepo.append({
       action: 'USER_REGISTERED',
@@ -293,6 +302,7 @@ export async function POST(
         email: newUser.email,
         fullLegalName: newUser.full_legal_name,
         companyId,
+        verificationTokenId: verification.tokenId,
         status: 'pending_verification',
       },
     });
