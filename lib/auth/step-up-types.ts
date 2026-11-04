@@ -8,7 +8,8 @@ export type SensitiveActionType =
   | 'ALTER_RISK_TIER'
   | 'FREEZE_PAYOUTS'
   | 'TRANSFER_OWNERSHIP'
-  | 'ROTATE_WEBHOOK_SECRET';
+  | 'ROTATE_WEBHOOK_SECRET'
+  | 'UNLOCK_USER_ACCOUNT';
 
 export const SENSITIVE_ACTION_DESCRIPTIONS: Record<SensitiveActionType, string> = {
   MODIFY_BANK_ACCOUNT: 'Modifying settlement bank account details',
@@ -19,6 +20,7 @@ export const SENSITIVE_ACTION_DESCRIPTIONS: Record<SensitiveActionType, string> 
   FREEZE_PAYOUTS: 'Placing administrative hold on merchant settlement disbursements',
   TRANSFER_OWNERSHIP: 'Transferring tenant ownership to another user',
   ROTATE_WEBHOOK_SECRET: 'Rotating payment gateway webhook verification secrets',
+  UNLOCK_USER_ACCOUNT: 'Administrative unlock of a security-locked user account',
 };
 
 export interface ReauthTicket {
