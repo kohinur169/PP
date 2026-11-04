@@ -14,7 +14,9 @@ export type SensitiveActionType =
   | 'UPDATE_GATEWAY_KEYS'
   | 'REVEAL_GATEWAY_KEYS'
   | 'APPROVE_PAYOUT'
-  | 'APPROVE_KYC_FINAL';
+  | 'APPROVE_KYC_FINAL'
+  | 'MANAGE_PLATFORM_SETTINGS'
+  | 'DELEGATE_STAFF_ROLE';
 
 export const SENSITIVE_ACTION_DESCRIPTIONS: Record<SensitiveActionType, string> = {
   MODIFY_BANK_ACCOUNT: 'Modifying settlement bank account details',
@@ -31,6 +33,8 @@ export const SENSITIVE_ACTION_DESCRIPTIONS: Record<SensitiveActionType, string> 
   REVEAL_GATEWAY_KEYS: 'Revealing live payment gateway API keys',
   APPROVE_PAYOUT: 'Approving merchant payout disbursement',
   APPROVE_KYC_FINAL: 'Granting final compliance approval on KYC application',
+  MANAGE_PLATFORM_SETTINGS: 'Modifying sensitive global platform settings or fee configurations',
+  DELEGATE_STAFF_ROLE: 'Delegating or elevating internal office staff roles',
 };
 
 export interface StepUpAuthCheckResult {
