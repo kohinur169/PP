@@ -46,6 +46,8 @@ export type StandardAuditAction =
   | 'SESSION_CREATED'
   | 'SESSION_REVOKED'
   | 'SESSION_REPLAY_DETECTED'
+  | 'NEW_DEVICE_LOGIN_DETECTED'
+  | 'NEW_DEVICE_CONFIRMED'
   | 'STEP_UP_REAUTH_PASSED'
   // Membership & Organization
   | 'COMPANY_CREATED'
