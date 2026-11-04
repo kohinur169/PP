@@ -8,5 +8,6 @@ export * from './step-up-types';
 export * from './step-up';
 export * from './totp-types';
 export * from './totp';
+export * from './middleware';
 export * from './rbac-types';
 export * from './rbac';

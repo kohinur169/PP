@@ -1,13 +1,30 @@
 // path: lib/auth/totp.ts
 import crypto from 'node:crypto';
+import QRCode from 'qrcode';
+import * as otplib from 'otplib';
 import type {
   TotpSetupResult,
   TotpVerifyOptions,
   TotpVerifyResult,
   BackupCodeVerifyResult,
 } from './totp-types';
+import type { UserTotpSetupData } from '../../types/mfa';
+import { encryptWithDomainKey, decryptWithDomainKey } from '../crypto/aes';
+import { UserMfaRepository } from '../db/mfa';
+import { AuditLogRepository } from '../db/audit';
+import { logger } from '../logger';
 
 const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+
+const defaultMfaRepo = new UserMfaRepository();
+const defaultAuditRepo = new AuditLogRepository();
+
+/**
+ * Checks if a string is a standard UUID.
+ */
+function isUuid(str: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+}
 
 /**
  * Encodes a buffer into a standard RFC 4648 Base32 string without padding.
@@ -107,7 +124,9 @@ export function verifyTotp(
   const window = options?.window ?? 1;
   const currentStep = Math.floor(timestampMs / 1000 / 30);
   const lastUsedStep =
-    options?.lastUsedStep !== undefined ? Number(options.lastUsedStep) : -1;
+    options?.lastUsedStep !== undefined && options.lastUsedStep !== null
+      ? Number(options.lastUsedStep)
+      : -1;
 
   for (let i = -window; i <= window; i++) {
     const step = currentStep + i;
@@ -139,8 +158,10 @@ export function verifyTotp(
 
 /**
  * Generates a high-entropy Base32 secret (20 random bytes = 160 bits).
+ * Supports optional userId parameter per Step 052.2 or byte length parameter.
  */
-export function generateTotpSecret(numBytes: number = 20): string {
+export function generateTotpSecret(arg?: number | string): string {
+  const numBytes = typeof arg === 'number' ? arg : 20;
   const randomBytes = crypto.randomBytes(numBytes);
   return base32Encode(randomBytes);
 }
@@ -156,6 +177,242 @@ export function generateOtpAuthUri(
   const encodedIssuer = encodeURIComponent(issuer);
   const encodedEmail = encodeURIComponent(email);
   return `otpauth://totp/${encodedIssuer}:${encodedEmail}?secret=${secretBase32}&issuer=${encodedIssuer}&algorithm=SHA1&digits=6&period=30`;
+}
+
+/**
+ * Generates a QR code data URL (PNG) for an otpauth URI using the qrcode library.
+ * Step 052.1: qrcode library integration.
+ */
+export async function generateQrCodeDataUrl(otpauthUri: string): Promise<string> {
+  return await QRCode.toDataURL(otpauthUri, {
+    errorCorrectionLevel: 'M',
+    margin: 2,
+    width: 256,
+  });
+}
+
+/**
+ * Generates a clean SVG string for an otpauth URI using the qrcode library.
+ */
+export async function generateQrCodeSvg(otpauthUri: string): Promise<string> {
+  return await QRCode.toString(otpauthUri, {
+    type: 'svg',
+    errorCorrectionLevel: 'M',
+    margin: 2,
+  });
+}
+
+/**
+ * Step 052.1 & otplib integration helpers.
+ */
+export function otplibGenerateSecret(): string {
+  return otplib.generateSecret();
+}
+
+export function otplibVerifyToken(params: { token: string; secret: string }): boolean {
+  try {
+    const result = otplib.verifySync({
+      token: params.token.trim(),
+      secret: params.secret.trim(),
+    });
+    return Boolean(result.valid);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Encrypts a Base32 TOTP secret at rest using AES-256-GCM.
+ * Step 052.2: Encrypted storage of TOTP secrets.
+ */
+export function encryptTotpSecret(secretBase32: string, userId: string): string {
+  return encryptWithDomainKey('tokens', secretBase32, { context: userId });
+}
+
+/**
+ * Decrypts an AES-256-GCM encrypted TOTP secret.
+ */
+export function decryptTotpSecret(encryptedEnvelope: string, userId: string): string {
+  return decryptWithDomainKey('tokens', encryptedEnvelope, { context: userId });
+}
+
+/**
+ * Step 052.2: Initiates TOTP enrollment for a user:
+ * - Generates 20-byte base32 secret
+ * - Generates otpauth URI and QR code data URL
+ * - Encrypts secret at rest with AES-256-GCM
+ * - Stores pending enrollment in user_mfa with mfa_enabled = false
+ */
+export async function startUserTotpEnrollment(
+  userId: string,
+  email: string,
+  options?: {
+    readonly mfaRepo?: UserMfaRepository | undefined;
+    readonly issuer?: string | undefined;
+  }
+): Promise<UserTotpSetupData> {
+  const mfaRepo = options?.mfaRepo ?? defaultMfaRepo;
+  const issuer = options?.issuer ?? 'KD SOLUTION IT';
+
+  const secret = generateTotpSecret(20);
+  const otpauthUri = generateOtpAuthUri(email, secret, issuer);
+  const qrCodeDataUrl = await generateQrCodeDataUrl(otpauthUri);
+  const encryptedSecret = encryptTotpSecret(secret, userId);
+
+  // Persist pending enrollment in user_mfa
+  await mfaRepo.upsertEnrollment(userId, encryptedSecret);
+
+  logger.info('TOTP enrollment initiated for user', {
+    userId,
+    email,
+  });
+
+  return {
+    secret,
+    otpauthUri,
+    qrCodeDataUrl,
+    encryptedSecret,
+  };
+}
+
+/**
+ * Step 052.3: Validates user's first 6-digit TOTP code before enabling 2FA.
+ * - Decrypts stored secret
+ * - Verifies code with clock skew tolerance and replay defense
+ * - Sets mfa_enabled = true in user_mfa
+ * - Records immutable 2FA_ENROLLED audit log
+ */
+export async function verifyEnrollmentCode(
+  userId: string,
+  code: string,
+  options?: {
+    readonly mfaRepo?: UserMfaRepository | undefined;
+    readonly auditRepo?: AuditLogRepository | undefined;
+    readonly timestamp?: number | undefined;
+  }
+): Promise<TotpVerifyResult> {
+  const mfaRepo = options?.mfaRepo ?? defaultMfaRepo;
+  const auditRepo = options?.auditRepo ?? defaultAuditRepo;
+
+  const record = await mfaRepo.findByUserId(userId);
+  if (!record) {
+    logger.warn('TOTP verification rejected: no enrollment found', { userId });
+    return {
+      valid: false,
+      error: 'No pending 2FA enrollment found for user',
+    };
+  }
+
+  let plainSecret: string;
+  try {
+    plainSecret = decryptTotpSecret(record.totp_secret_encrypted, userId);
+  } catch (err: unknown) {
+    logger.error('Failed to decrypt TOTP secret for user', { userId, error: err });
+    return {
+      valid: false,
+      error: 'Corrupted or unreadable TOTP security secret',
+    };
+  }
+
+  const verifyResult = verifyTotp(code, plainSecret, {
+    timestamp: options?.timestamp,
+    lastUsedStep: record.last_used_step ?? undefined,
+  });
+
+  if (!verifyResult.valid) {
+    logger.warn('TOTP enrollment code verification failed', {
+      userId,
+      error: verifyResult.error,
+    });
+    return verifyResult;
+  }
+
+  // Code is valid: activate 2FA
+  await mfaRepo.enableMfa(userId, verifyResult.step);
+
+  // Audit log entry
+  const actorId = isUuid(userId) ? userId : null;
+  await auditRepo.append({
+    action: '2FA_ENROLLED',
+    entity_type: 'user',
+    entity_id: userId,
+    actor_id: actorId,
+    diff_payload: {
+      before: { mfa_enabled: false },
+      after: { mfa_enabled: true },
+      changed_fields: ['mfa_enabled'],
+    },
+    payload: {
+      userId,
+      method: 'TOTP_RFC6238',
+      step: verifyResult.step,
+      enrolledAt: new Date().toISOString(),
+    },
+  });
+
+  logger.info('TOTP 2FA successfully verified and enabled for user', {
+    userId,
+    step: verifyResult.step,
+  });
+
+  return verifyResult;
+}
+
+/**
+ * Checks whether a given user has actively enabled 2FA.
+ */
+export async function isUser2faEnrolled(
+  userId: string,
+  options?: { readonly mfaRepo?: UserMfaRepository | undefined }
+): Promise<boolean> {
+  const mfaRepo = options?.mfaRepo ?? defaultMfaRepo;
+  const record = await mfaRepo.findByUserId(userId);
+  return record?.mfa_enabled === true;
+}
+
+/**
+ * Step 052.4: Evaluates whether a user must be redirected to the mandatory 2FA enrollment flow.
+ * In KD Solution IT, 2FA is strictly mandatory for every account role.
+ */
+export function evaluate2faRedirect(
+  user: {
+    readonly id: string;
+    readonly mfa_enabled?: boolean | undefined;
+    readonly is_staff?: boolean | undefined;
+    readonly status?: string | undefined;
+  },
+  pathname: string
+): { readonly shouldRedirect: boolean; readonly destination?: string | undefined } {
+  // Public, static, authentication, or setup paths are exempt from redirect
+  const exemptPrefixes = [
+    '/auth/2fa/setup',
+    '/api/auth/2fa',
+    '/api/auth/logout',
+    '/api/auth/login',
+    '/api/auth/register',
+    '/api/auth/verify-email',
+    '/login',
+    '/register',
+    '/verify-email',
+    '/_next',
+    '/favicon.ico',
+  ];
+
+  for (const prefix of exemptPrefixes) {
+    if (pathname.startsWith(prefix)) {
+      return { shouldRedirect: false };
+    }
+  }
+
+  // If user has not completed 2FA enrollment, redirect to mandatory setup page
+  if (!user.mfa_enabled) {
+    return {
+      shouldRedirect: true,
+      destination: '/auth/2fa/setup',
+    };
+  }
+
+  return { shouldRedirect: false };
 }
 
 /**
