@@ -3,6 +3,7 @@
 import crypto from 'node:crypto';
 import { verifyPassword } from './password';
 import { createSession } from './session';
+import { checkLockoutGuard, recordFailedLoginAttempt } from './lockout';
 import type { DeviceCharacteristics, UserSession } from './session-types';
 import { UserRepository } from '../db/users';
 import { AuditLogRepository } from '../db/audit';
@@ -118,11 +119,9 @@ export async function authenticateUser(
   }
 
   // 3. Case B: User exists - check if account is currently locked
-  const isLocked =
-    (user.locked_until && new Date(user.locked_until).getTime() > Date.now()) ||
-    user.status === 'locked';
+  const lockoutGuard = await checkLockoutGuard(user.id, { userRepo, auditRepo });
 
-  if (isLocked) {
+  if (lockoutGuard.locked) {
     // Run dummy Argon2id to equalize response time even when locked
     await verifyPassword(candidatePassword, DUMMY_ARGON2ID_HASH);
 
@@ -151,6 +150,7 @@ export async function authenticateUser(
       success: false,
       error: 'ACCOUNT_LOCKED',
       message:
+        lockoutGuard.message ||
         'Account is temporarily locked due to consecutive failed login attempts. Please try again later.',
       timingDurationMs: duration,
     };
@@ -161,46 +161,8 @@ export async function authenticateUser(
 
   // 5. Case C: Password mismatch for existing user
   if (!passwordMatch) {
-    const failedAttempts = (user.failed_attempts || 0) + 1;
-    const shouldLock = failedAttempts >= 2; // Step 050: 2 consecutive failed attempts = 2h lock
-
-    let lockedUntil: string | null = null;
-    let newStatus: UserAccountStatus = user.status;
-
-    if (shouldLock) {
-      lockedUntil = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
-      newStatus = 'locked';
-    }
-
-    await userRepo.update(user.id, user.version, {
-      failed_attempts: failedAttempts,
-      locked_until: lockedUntil,
-      status: newStatus,
-    });
-
+    await recordFailedLoginAttempt(user.id, { userRepo, auditRepo });
     const duration = Date.now() - startTime;
-    logger.warn('Authentication failed: incorrect password', {
-      userId: user.id,
-      failedAttempts,
-      locked: shouldLock,
-      durationMs: duration,
-    });
-
-    await auditRepo.append({
-      action: shouldLock ? 'ACCOUNT_LOCKED' : 'LOGIN_FAILED',
-      entity_type: 'user',
-      entity_id: user.id,
-      actor_id: user.id,
-      company_id: user.company_id,
-      ip_address: credentials.device.ip,
-      user_agent: credentials.device.userAgent,
-      payload: {
-        userId: user.id,
-        failedAttempts,
-        locked: shouldLock,
-        lockedUntil,
-      },
-    });
 
     return {
       success: false,
