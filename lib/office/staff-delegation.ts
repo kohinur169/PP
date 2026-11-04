@@ -14,6 +14,7 @@ import {
 import { StepUpChallenge } from '@/lib/auth/step-up-types';
 import { UserRepository } from '@/lib/db/users';
 import { AuditLogRepository } from '@/lib/db/audit';
+import { logPermissionChange } from '@/lib/audit/rbac';
 import { logger } from '@/lib/logger';
 
 /**
@@ -161,30 +162,23 @@ export async function delegateStaffRole(
     reason: validated.reason,
   });
 
-  // 7. Audit Logging
-  if (auditRepo) {
-    try {
-      await auditRepo.createLog({
-        company_id: '00000000-0000-7000-8000-000000000000', // Platform root
-        actor_id: actorId,
-        action: 'STAFF_ROLE_DELEGATED',
-        entity_type: 'user_role',
-        entity_id: validated.targetUserId,
-        payload: {
-          actor_role: actorRole,
-          targetUserId: validated.targetUserId,
-          targetEmail: userEmail,
-          oldRole,
-          newRole: validated.newRole,
-          reason: validated.reason,
-          clientIp: clientIp ?? '127.0.0.1',
-        },
-      });
-    } catch (auditErr) {
-      logger.error('Failed to log staff role delegation audit event', {
-        error: auditErr instanceof Error ? auditErr.message : String(auditErr),
-      });
-    }
+  // 7. Audit Logging & Executive Security Alert Dispatch (Step 075)
+  try {
+    await logPermissionChange(
+      actorId,
+      validated.targetUserId,
+      oldRole,
+      validated.newRole,
+      validated.reason,
+      {
+        ipAddress: clientIp ?? '127.0.0.1',
+        auditRepo,
+      }
+    );
+  } catch (auditErr) {
+    logger.error('Failed to log staff role delegation audit event', {
+      error: auditErr instanceof Error ? auditErr.message : String(auditErr),
+    });
   }
 
   const staffMember: StaffMember = {
