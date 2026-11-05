@@ -68,7 +68,30 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
     }
   }
 
-  return NextResponse.next();
+  const response = NextResponse.next();
+  return applySecurityHeaders(response);
+}
+
+/**
+ * Step 131.2: Applies strict Content Security Policy (CSP) and transport security headers.
+ * Restricts iframe embedding strictly to authorized payment gateways (NMI Collect.js, Stripe Elements, Rainforest, Airwallex).
+ */
+function applySecurityHeaders(res: NextResponse): NextResponse {
+  res.headers.set(
+    'Content-Security-Policy',
+    [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://secure.nmi.com https://js.stripe.com",
+      "frame-src 'self' https://secure.nmi.com https://js.stripe.com https://hooks.stripe.com https://sandbox.rainforestpay.com https://api.rainforestpay.com https://demo.airwallex.com https://api.airwallex.com",
+      "connect-src 'self' https://secure.nmi.com https://api.stripe.com https://sandbox.rainforestpay.com https://api.rainforestpay.com https://api-demo.airwallex.com https://api.airwallex.com https://api.sandbox.payoneer.com https://api.payoneer.com",
+      "img-src 'self' data: https:",
+      "style-src 'self' 'unsafe-inline'",
+    ].join('; ')
+  );
+  res.headers.set('X-Frame-Options', 'SAMEORIGIN');
+  res.headers.set('X-Content-Type-Options', 'nosniff');
+  res.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+  return res;
 }
 
 export const config = {
