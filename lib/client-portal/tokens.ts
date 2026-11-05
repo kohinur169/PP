@@ -4,9 +4,27 @@ import crypto from 'node:crypto';
 import { checkRateLimit, RateLimitResult } from '@/lib/security/rate-limit';
 import { AuditLogRepository } from '@/lib/db/audit';
 import { logger } from '@/lib/logger';
+import { generateUuidV7 } from '@/lib/db/uuidv7';
 
 export const TOKEN_PORTAL_RATE_LIMIT = 30; // Max 30 attempts per minute per IP to defend against brute force
 export const TOKEN_PORTAL_WINDOW_SECONDS = 60;
+export const MAX_TOKEN_ACCESS_PER_MINUTE = 60;
+
+export type DocumentTokenType = 'invoice' | 'estimate';
+
+export interface DocumentTokenRecord {
+  id: string;
+  tenantId: string;
+  companyId: string;
+  tokenHash: string;
+  tokenType: DocumentTokenType;
+  documentId: string;
+  expiresAt: string;
+  accessCount: number;
+  lastAccessedAt?: string | undefined;
+  isRevoked: boolean;
+  createdAt: string;
+}
 
 export interface InvoiceLineItem {
   readonly description: string;
@@ -69,6 +87,9 @@ export interface TokenizedEstimate {
 // In-memory registries for tokenized documents
 const invoiceRegistry = new Map<string, TokenizedInvoice>();
 const estimateRegistry = new Map<string, TokenizedEstimate>();
+const tokensStore = new Map<string, DocumentTokenRecord>();
+const tokenRateLimitStore = new Map<string, { count: number; windowStart: number }>();
+const auditRepo = new AuditLogRepository();
 
 /**
  * Resets stores for test isolation.
@@ -76,6 +97,12 @@ const estimateRegistry = new Map<string, TokenizedEstimate>();
 export function resetTokenizedPortalDataForTest(): void {
   invoiceRegistry.clear();
   estimateRegistry.clear();
+  tokensStore.clear();
+  tokenRateLimitStore.clear();
+}
+
+export function resetDocumentTokensStore(): void {
+  resetTokenizedPortalDataForTest();
 }
 
 /**
@@ -103,6 +130,120 @@ export function seedTokenizedEstimateForTest(estimate: TokenizedEstimate): void 
  */
 export function generateHighEntropyToken(): string {
   return crypto.randomBytes(32).toString('base64url');
+}
+
+/**
+ * Step 196.1: Generates high-entropy token for invoice (/i/[token]) or estimate (/e/[token]).
+ */
+export function generateDocumentToken(input: {
+  tenantId: string;
+  companyId: string;
+  tokenType: DocumentTokenType;
+  documentId: string;
+  expiresInDays?: number | undefined;
+}): { token: string; urlPath: string; record: DocumentTokenRecord } {
+  const token = crypto.randomBytes(32).toString('hex');
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+  const id = generateUuidV7();
+  const now = new Date();
+  const expiresAt = new Date(
+    now.getTime() + (input.expiresInDays ?? 30) * 24 * 60 * 60 * 1000
+  ).toISOString();
+
+  const record: DocumentTokenRecord = {
+    id,
+    tenantId: input.tenantId,
+    companyId: input.companyId,
+    tokenHash,
+    tokenType: input.tokenType,
+    documentId: input.documentId,
+    expiresAt,
+    accessCount: 0,
+    isRevoked: false,
+    createdAt: now.toISOString(),
+  };
+
+  tokensStore.set(tokenHash, record);
+
+  const prefix = input.tokenType === 'invoice' ? '/i/' : '/e/';
+  const urlPath = `${prefix}${token}`;
+
+  logger.info('Document token generated', {
+    tokenId: id,
+    tokenType: input.tokenType,
+    documentId: input.documentId,
+    urlPath,
+  });
+
+  return { token, urlPath, record };
+}
+
+/**
+ * Step 196.2 & 196.3: Resolves tokenized link, enforcing rate limiting and expiration.
+ */
+export function resolveDocumentToken(
+  token: string,
+  clientIp = '127.0.0.1'
+): {
+  isValid: boolean;
+  documentId?: string | undefined;
+  tokenType?: DocumentTokenType | undefined;
+  tenantId?: string | undefined;
+  companyId?: string | undefined;
+  error?: 'not_found' | 'expired' | 'revoked' | 'rate_limited' | undefined;
+} {
+  const nowMs = Date.now();
+  const rateKey = `${clientIp}:${token.slice(0, 16)}`;
+  const rateRecord = tokenRateLimitStore.get(rateKey) ?? { count: 0, windowStart: nowMs };
+
+  if (nowMs - rateRecord.windowStart < 60000) {
+    rateRecord.count += 1;
+    if (rateRecord.count > MAX_TOKEN_ACCESS_PER_MINUTE) {
+      logger.warn('Tokenized portal rate limit exceeded', { clientIp, tokenPrefix: token.slice(0, 8) });
+      return { isValid: false, error: 'rate_limited' };
+    }
+  } else {
+    rateRecord.count = 1;
+    rateRecord.windowStart = nowMs;
+  }
+  tokenRateLimitStore.set(rateKey, rateRecord);
+
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  const record = tokensStore.get(tokenHash);
+
+  if (!record) {
+    return { isValid: false, error: 'not_found' };
+  }
+
+  if (record.isRevoked) {
+    return { isValid: false, error: 'revoked' };
+  }
+
+  if (Date.now() > new Date(record.expiresAt).getTime()) {
+    return { isValid: false, error: 'expired' };
+  }
+
+  record.accessCount += 1;
+  record.lastAccessedAt = new Date().toISOString();
+
+  return {
+    isValid: true,
+    documentId: record.documentId,
+    tokenType: record.tokenType,
+    tenantId: record.tenantId,
+    companyId: record.companyId,
+  };
+}
+
+export function revokeDocumentToken(token: string): boolean {
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  const record = tokensStore.get(tokenHash);
+  if (record) {
+    record.isRevoked = true;
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -210,7 +351,7 @@ export async function payTokenizedInvoice(params: {
   if (auditRepo) {
     await auditRepo.createLog({
       company_id: invoice.companyId,
-      actor_id: '00000000-0000-7000-8000-000000000000', // External customer / unauthenticated token actor
+      actor_id: '00000000-0000-7000-8000-000000000000',
       action: 'INVOICE_PAID',
       entity_type: 'invoice',
       entity_id: invoice.id,
