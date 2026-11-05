@@ -23,6 +23,7 @@
     "db:seed": "tsx db/seeds/index.ts",
     "verify:audit": "tsx scripts/verify-audit-chain.ts",
     "verify:phase1": "tsx scripts/verify-phase1.ts",
+    "verify:go-live": "tsx scripts/verify-go-live.ts",
     "storage:check": "tsx scripts/check-storage.ts"
   },
   "dependencies": {
