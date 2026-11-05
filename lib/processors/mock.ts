@@ -22,13 +22,20 @@ import {
 } from '@/lib/processors/types';
 
 export class MockPaymentProcessorAdapter implements PaymentProcessorAdapter {
-  readonly providerSlug = 'mock_processor';
-  readonly providerDisplayName = 'Mock Developer Sandbox Gateway';
+  readonly providerSlug: string;
+  readonly providerDisplayName: string;
 
   private isConnected = true;
   private simulateTimeout = false;
 
-  constructor(options?: { isConnected?: boolean; simulateTimeout?: boolean }) {
+  constructor(options?: {
+    providerSlug?: string;
+    providerDisplayName?: string;
+    isConnected?: boolean;
+    simulateTimeout?: boolean;
+  }) {
+    this.providerSlug = options?.providerSlug ?? 'mock_processor';
+    this.providerDisplayName = options?.providerDisplayName ?? 'Mock Developer Sandbox Gateway';
     if (options?.isConnected !== undefined) this.isConnected = options.isConnected;
     if (options?.simulateTimeout !== undefined) this.simulateTimeout = options.simulateTimeout;
   }
