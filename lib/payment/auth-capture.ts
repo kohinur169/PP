@@ -4,6 +4,11 @@ import { generateUuidV7 } from '@/lib/db/uuidv7';
 import { Money } from '@/lib/money/money';
 import { logger } from '@/lib/logger/logger';
 import { AuditLogRepository } from '@/lib/db/audit';
+import {
+  isPreCaptureReviewRequired,
+  initiatePreCaptureReview,
+  assertCaptureAllowed,
+} from '@/lib/payment/pre-capture-review';
 import type { PaymentProcessorSlug } from '@/types/processors';
 import type { CardBrand } from '@/lib/processors/routing';
 
@@ -133,6 +138,17 @@ export async function authorize(
 
   authorizationStore.set(id, record);
 
+  // Step 139: Enqueue for mandatory compliance review if transaction > $5,000
+  if (isPreCaptureReviewRequired(record.amount)) {
+    await initiatePreCaptureReview({
+      tenantId: record.tenantId,
+      companyId: record.companyId,
+      paymentId: record.id,
+      amount: record.amount,
+      provider: record.provider,
+    });
+  }
+
   try {
     await auditRepo.append({
       actor_id: '00000000-0000-0000-0000-000000000000',
@@ -198,6 +214,9 @@ export async function capture(
       `Capture amount (${captureAmount.toNumericString()}) cannot exceed original authorized amount (${record.amount.toNumericString()}).`
     );
   }
+
+  // Step 139: Enforce mandatory pre-capture compliance review gate for transactions > $5,000
+  await assertCaptureAllowed(record.id, record.amount);
 
   const capturedAt = now.toISOString();
   record.status = 'captured';
