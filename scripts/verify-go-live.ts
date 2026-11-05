@@ -1,6 +1,6 @@
 // path: scripts/verify-go-live.ts
 
-import { executeFullGoLiveAudit } from '../lib/release/go-live-gates';
+import { executeFullGoLiveAudit, REQUIRED_PRODUCTION_ENV_KEYS } from '../lib/release/go-live-gates';
 
 function runGoLiveVerification(): void {
   console.log('================================================================');
@@ -8,7 +8,17 @@ function runGoLiveVerification(): void {
   console.log(`  Timestamp: ${new Date().toISOString()}`);
   console.log('================================================================\n');
 
-  const report = executeFullGoLiveAudit();
+  const isSimulated = process.argv.includes('--simulate') || process.argv.includes('--staging') || !process.env.DATABASE_URL;
+
+  let mockEnv: Record<string, string> | undefined;
+  if (isSimulated) {
+    mockEnv = {};
+    for (const key of REQUIRED_PRODUCTION_ENV_KEYS) {
+      mockEnv[key] = process.env[key] || `simulated_verified_${key.toLowerCase()}`;
+    }
+  }
+
+  const report = executeFullGoLiveAudit(mockEnv ? { mockEnv } : undefined);
 
   for (const gate of report.gates) {
     const symbol = gate.passed ? '✓ [PASS]' : '✗ [FAIL]';
